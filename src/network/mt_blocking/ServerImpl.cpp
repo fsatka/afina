@@ -34,7 +34,7 @@ ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Loggi
 ServerImpl::~ServerImpl() {}
 
 // Implements of Inner methods
-void ServerImpl::_start_worker(std::thread* current_worker, int client_socket, Afina::Storage* pStorage){
+void ServerImpl::_start_worker(int client_socket, Afina::Storage* pStorage){
     // Here is connection state
     // - parser: parse state of the stream
     // - command_to_execute: last command parsed out of stream
@@ -44,7 +44,6 @@ void ServerImpl::_start_worker(std::thread* current_worker, int client_socket, A
     Protocol::Parser parser;
     std::string argument_for_command;
     std::unique_ptr<Execute::Command> command_to_execute;
-    std::cout<<(current_worker == nullptr) << std::endl;
     
 
     try {
@@ -125,29 +124,11 @@ void ServerImpl::_start_worker(std::thread* current_worker, int client_socket, A
         _logger->error("Failed to process connection on descriptor {}: {}", client_socket, ex.what());
     }
 
-        std::cout<<"I'm worker from process"<<std::endl;
-
         close(client_socket);
 
         command_to_execute.reset();
         argument_for_command.resize(0);
         parser.Reset();
-
-        if (!running.load()) {
-            std::unique_lock<std::mutex> lock(_is_storage);
-            
-            {
-                std::guard_lock< std::mutex > queueLock(_queue_mutex);
-                _waiting_workers.push(current_worker);
-            }
-            
-            _complete_storage.store(true);
-            _shutdown_worker.notify_one();
-        } else {
-            _queue_mutex.lock();
-            _waiting_workers.push(current_worker);
-            _queue_mutex.unlock();
-        }
 }
 
 // See Server.h
@@ -191,9 +172,7 @@ void ServerImpl::Start(uint16_t port, uint32_t n_accept, uint32_t n_workers) {
 
     //initial pointers(memory) for workers
     _count_of_workers = n_workers;
-    for(size_t i = 0; i < n_workers; i++){
-        _waiting_workers.push(nullptr);
-    }
+    _waiting_workers.reserve(n_workers);
 
     //runing thread on listen port
     running.store(true);
@@ -209,32 +188,16 @@ void ServerImpl::Stop() {
 // See Server.h
 void ServerImpl::Join() {
     running.store(false);
-
-
-    _queue_mutex.lock();
-    if(_count_of_workers != _waiting_workers.size())
-        _complete_storage.store(false);
-    _queue_mutex.unlock();
-
-    while(_count_of_workers != 0) {
-        std::unique_lock<std::mutex> lock(_is_storage);
-        while(!_complete_storage.load())
-            _shutdown_worker.wait(lock);
-
-        _queue_mutex.lock();
-        while(!_waiting_workers.empty()) {
-            std::thread* ptr_worker = _waiting_workers.front();
-            if(ptr_worker != nullptr){
-                std::cout<<"I'm in block on delete!!"<<std::endl;
-                ptr_worker->join();
-                ptr_worker->detach();
+    
+    {
+        std::lock_guard<std::mutex> lock(_queue_mutex);
+        for(auto& worker : _waiting_workers) {
+            if(worker->joinable()) {
+                worker->join();
             }
-            _count_of_workers--;
-            _waiting_workers.pop();
         }
-        _queue_mutex.unlock();
-        _complete_storage.store(false);
     }
+    
     assert(_thread.joinable());
     _thread.join();
     close(_server_socket);
@@ -276,24 +239,37 @@ void ServerImpl::OnRun() {
         }
 
         // TODO: Start new thread and process data from/to connection
-        _queue_mutex.lock();
-        if(!_waiting_workers.empty()){
-            std::thread current_thread = _waiting_workers.front();
-            if(current_thread != nullptr){
-                current_thread.join();
-                delete current_thread;
-                current_thread = nullptr;
-            }
-            _waiting_workers.pop();
-            _queue_mutex.unlock();
-            current_thread = new std::thread(&ServerImpl::_start_worker, this, current_thread, client_socket, pStorage.get());
+        {
+            std::lock_guard<std::mutex> lock(_queue_mutex);
+            _waiting_workers.erase(std::remove_if(_waiting_workers.begin(), _waiting_workers.end(), [](const std::shared_ptr<WaitingThread>& worker) {
+                if ( worker->isFinished.load() ) {
+                    if (worker->joinable()) {
+                        worker->join();
+                    }
+                    return true;
+                }
+                return false;
+            }), _waiting_workers.end());
         }
-        else{
-            _queue_mutex.unlock();
-            close(client_socket);
-        }
+            
+        {
+            std::lock_guard<std::mutex> lock(_queue_mutex);
+            if (_waiting_workers.size() < _count_of_workers && running) {
+                std::shared_ptr<WaitingThread> waitingThread = std::make_shared<WaitingThread>();
+                auto worker = [client_socket, this](std::weak_ptr<WaitingThread> waitingThreadWeak) {
+                    _start_worker(client_socket, pStorage.get());
+                    if(auto strongPtr = waitingThreadWeak.lock()) {
+                        strongPtr->isFinished.store(true);
+                    }
+                };
 
-        
+                waitingThread->workerThread = std::move(std::thread(worker, waitingThread));
+                _waiting_workers.push_back(waitingThread);
+            }
+            else {
+                close(client_socket);
+            }
+        }
     }
 
     // Cleanup on exit...

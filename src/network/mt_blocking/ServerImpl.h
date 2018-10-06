@@ -54,13 +54,25 @@ private:
     // flag must be atomic in order to safely publisj changes cross thread
     // bounds
     std::atomic<bool> running;
-    std::queue<std::thread*> _waiting_workers;
 
+    struct WaitingThread {
+        std::thread workerThread;
+        std::atomic_bool isFinished{ false };
+
+        WaitingThread() = default;
+
+        bool joinable() const {
+            return workerThread.joinable();
+        }
+        
+        void join() {
+            workerThread.join();
+        }
+    };
+
+    std::vector<std::shared_ptr<WaitingThread>> _waiting_workers;
     std::mutex _queue_mutex;
-    std::mutex _is_storage;
-    std::atomic<bool> _complete_storage;
-    uint32_t _count_of_workers = 0;
-    std::condition_variable _shutdown_worker; 
+    uint32_t _count_of_workers = 0; 
     // Server socket to accept connections on
     int _server_socket;
 
@@ -68,7 +80,7 @@ private:
     std::thread _thread;
 
     //Inner methods
-    void _start_worker(std::thread* current_worker, int client_socket, Afina::Storage* pStorage);
+    void _start_worker(int client_socket, Afina::Storage* pStorage);
 };
 
 } // namespace MTblocking

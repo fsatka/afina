@@ -4,7 +4,7 @@ namespace Afina {
 namespace Backend {
 
 // See MapBasedGlobalLockImpl.h
-bool SimpleLRU::Put(const std::string &key, const std::string &value) { 
+bool SimpleLRU::Put(const std::string &key, const std::string &value) {
     if(key.size()+value.size() > _max_size) {
         return false;
     }
@@ -26,7 +26,8 @@ bool SimpleLRU::Put(const std::string &key, const std::string &value) {
 
 // See MapBasedGlobalLockImpl.h
 bool SimpleLRU::PutIfAbsent(const std::string &key, const std::string &value) { 
-    if(_lru_index.count(key) != 0) {
+    auto it = _lru_index.find(key);
+    if (it != _lru_index.end()) {
         return false; 
     }
 
@@ -35,7 +36,8 @@ bool SimpleLRU::PutIfAbsent(const std::string &key, const std::string &value) {
 
 // See MapBasedGlobalLockImpl.h
 bool SimpleLRU::Set(const std::string &key, const std::string &value) {
-    if(_lru_index.count(key)==0) {
+    auto it = _lru_index.find(key);
+    if (it == _lru_index.end()) {
         return false;
     }
     return SimpleLRU::Put(key, value);
@@ -43,13 +45,14 @@ bool SimpleLRU::Set(const std::string &key, const std::string &value) {
 
 // See MapBasedGlobalLockImpl.h
 bool SimpleLRU::Delete(const std::string &key) {
-    if(_lru_index.count(key)==0){
+    auto it = _lru_index.find(key);
+    if (it == _lru_index.end()) {
         return false;
     }
 
-    lru_node* buff = &_lru_index.at(key).get();
+    lru_node* buff = &it->second.get();
 
-    if(buff == _lru_tail.get()) {
+    if (buff == _lru_tail.get()) {
         return SimpleLRU::_Delete_tail_node();
     }
 
@@ -71,12 +74,13 @@ bool SimpleLRU::Delete(const std::string &key) {
 }
 
 // See MapBasedGlobalLockImpl.h
-bool SimpleLRU::Get(const std::string &key, std::string &value) const { 
-    if(_lru_index.count(key) == 0) {
+bool SimpleLRU::Get(const std::string &key, std::string &value) const {
+    auto it = _lru_index.find(key);
+    if (it == _lru_index.end()) {
         return false;
     }
 
-    lru_node* buff = &_lru_index.at(key).get();
+    lru_node* buff = &it->second.get();
 
     value = buff->value;
     if(buff == _lru_head) {
