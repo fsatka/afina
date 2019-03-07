@@ -18,7 +18,6 @@ using namespace std;
 
 TEST(StorageTest, PutGet) {
     SimpleLRU storage;
-
     storage.Put("KEY1", "val1");
     storage.Put("KEY2", "val2");
 

@@ -5,6 +5,8 @@
 #include <mutex>
 #include <string>
 #include <map>
+#include <utility>
+#include <functional>
 
 #include <afina/Storage.h>
 
@@ -21,7 +23,7 @@ public:
 
     ~SimpleLRU() {
         _lru_index.clear();
-        _lru_head.reset(); // TODO: Here is stack overflow
+        //_lru_head.reset(); // TODO: Here is stack overflow
         while (_lru_head.get() != _lru_tail) {
             _lru_tail = _lru_tail->prev;
             _lru_tail->next.reset();
@@ -50,8 +52,8 @@ private:
     using lru_node = struct lru_node {
         std::string key;
         std::string value;
-        lru_node *prev;
-        std::unique_ptr<lru_node> next;
+        lru_node *prev = nullptr;
+        std::unique_ptr<lru_node> next = nullptr;
     };
 
     void _InsertNode(const std::string &key, const std::string &value);
@@ -67,8 +69,8 @@ private:
     // element that wasn't used for longest time.
     //
     // List owns all nodes
-    std::unique_ptr<lru_node> _lru_head;
-    lru_node *_lru_tail;
+    std::unique_ptr<lru_node> _lru_head = nullptr;
+    lru_node *_lru_tail = nullptr;
 
     // Index of nodes from list above, allows fast random access to elements by lru_node#key
     std::map<std::reference_wrapper<const std::string>, std::reference_wrapper<lru_node>,

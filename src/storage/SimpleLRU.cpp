@@ -1,4 +1,5 @@
 #include "SimpleLRU.h"
+#include <iostream>
 
 namespace Afina {
 namespace Backend {
@@ -10,15 +11,15 @@ bool SimpleLRU::Put(const std::string &key, const std::string &value) {
         return false;
 
     while (sumOfSize > _free_size) {
-        _free_size += SumOfSize(_lru_head->key, _lru_head->value);
         Delete(_lru_head->key);
     }
 
-    auto it = _lru_index.find(key);
-    if (it != _lru_index.end()) {
-        Delete(key);
-    }
-    _InsertNode(key, value);
+    _lru_index.find(key);
+    
+    //if (it != _lru_index.end()) {
+    //    Delete(key);
+    //}
+    SimpleLRU::_InsertNode(key, value);
     return true;
 }
 
@@ -49,22 +50,27 @@ bool SimpleLRU::Delete(const std::string &key) {
         return false;
     }
 
-    if (&it->second.get() == _lru_head.get()) {
-        it->second.get().next.swap(_lru_head);
-        it->second.get().next.reset();
-        _lru_head->prev = nullptr;
-    } else if (&it->second.get() == _lru_tail) {
+    lru_node* buff = &it->second.get();
+    _free_size += SumOfSize(buff->key, buff->value);
+    if(_lru_head.get() == _lru_tail){
+        _lru_tail = nullptr;
+        _lru_head.reset();
+    }
+    else if (buff == _lru_head.get()) {
+        buff->next.swap(_lru_head);
+        buff->next.reset();
+    } else if (buff == _lru_tail) {
         _lru_tail = _lru_tail->prev;
         _lru_tail->next->prev = nullptr;
         _lru_tail->next.reset();
     } else {
-        it->second.get().next->prev = it->second.get().prev;
-        it->second.get().next.swap(it->second.get().prev->next);
-        it->second.get().prev = nullptr;
-        it->second.get().next.reset();
+        buff->next->prev = buff->prev;
+        buff->next.swap(buff->prev->next);
+        buff->prev = nullptr;
+        buff->next.reset();
     }
 
-    _lru_index.erase(it);
+    _lru_index.erase(key);
     return true;
 }
 
@@ -80,15 +86,27 @@ bool SimpleLRU::Get(const std::string &key, std::string &value) const {
 }
 
 void SimpleLRU::_InsertNode(const std::string &key, const std::string &value) {
-    _lru_tail->next.reset(new lru_node());
-    _lru_tail->next->prev = _lru_tail;
-    _lru_tail = _lru_tail->next.get();
-    _lru_tail->key = key;
-    _lru_tail->value = value;
+    lru_node* buff = new lru_node;
+    buff->key = key;
+    buff->value = value;
+    if (_lru_tail == nullptr) {
+        _lru_head.reset(buff);
+        _lru_tail = _lru_head.get();
+    } else {
+        _lru_tail->next.reset(buff);
+        _lru_tail->next->prev = _lru_tail;
+        _lru_tail = _lru_tail->next.get();
+    }
+    _free_size -= SumOfSize(key, value);
+
+    std::reference_wrapper<lru_node> ref_node(*buff);
+    std::reference_wrapper<const std::string> ref_key(key);
+    _lru_index.insert(std::pair<std::reference_wrapper<const std::string>,
+                      std::reference_wrapper<lru_node>>(ref_key, ref_node));
 }
 
-std::size_t SimpleLRU::SumOfSize(const std::string &key, const std::string &value) const{
-    return key.size()+value.size();
+std::size_t SimpleLRU::SumOfSize(const std::string &key, const std::string &value) const {
+    return key.size() + value.size();
 }
 
 } // namespace Backend
