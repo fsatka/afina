@@ -1,12 +1,12 @@
 #ifndef AFINA_STORAGE_SIMPLE_LRU_H
 #define AFINA_STORAGE_SIMPLE_LRU_H
 
+#include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <map>
 #include <utility>
-#include <functional>
 
 #include <afina/Storage.h>
 
@@ -69,12 +69,12 @@ private:
     // element that wasn't used for longest time.
     //
     // List owns all nodes
-    std::unique_ptr<lru_node> _lru_head = nullptr;
-    lru_node *_lru_tail = nullptr;
+    mutable std::unique_ptr<lru_node> _lru_head = nullptr;
+    mutable lru_node *_lru_tail = nullptr;
 
     // Index of nodes from list above, allows fast random access to elements by lru_node#key
-    std::map<std::reference_wrapper<const std::string>, std::reference_wrapper<lru_node>,
-                       std::less<std::string>>_lru_index;
+    std::map<std::reference_wrapper<const std::string>, std::reference_wrapper<lru_node>, std::less<std::string>>
+        _lru_index;
 };
 
 } // namespace Backend

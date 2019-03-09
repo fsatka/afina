@@ -14,11 +14,11 @@ bool SimpleLRU::Put(const std::string &key, const std::string &value) {
         Delete(_lru_head->key);
     }
 
-    _lru_index.find(key);
-    
-    //if (it != _lru_index.end()) {
-    //    Delete(key);
-    //}
+    auto it = _lru_index.find(key);
+
+    if (it != _lru_index.end()) {
+        Delete(key);
+    }
     SimpleLRU::_InsertNode(key, value);
     return true;
 }
@@ -50,13 +50,12 @@ bool SimpleLRU::Delete(const std::string &key) {
         return false;
     }
 
-    lru_node* buff = &it->second.get();
+    lru_node *buff = &it->second.get();
     _free_size += SumOfSize(buff->key, buff->value);
-    if(_lru_head.get() == _lru_tail){
+    if (_lru_head.get() == _lru_tail) {
         _lru_tail = nullptr;
         _lru_head.reset();
-    }
-    else if (buff == _lru_head.get()) {
+    } else if (buff == _lru_head.get()) {
         buff->next.swap(_lru_head);
         buff->next.reset();
     } else if (buff == _lru_tail) {
@@ -70,7 +69,7 @@ bool SimpleLRU::Delete(const std::string &key) {
         buff->next.reset();
     }
 
-    _lru_index.erase(key);
+    _lru_index.erase(it);
     return true;
 }
 
@@ -86,7 +85,7 @@ bool SimpleLRU::Get(const std::string &key, std::string &value) const {
 }
 
 void SimpleLRU::_InsertNode(const std::string &key, const std::string &value) {
-    lru_node* buff = new lru_node;
+    lru_node *buff = new lru_node();
     buff->key = key;
     buff->value = value;
     if (_lru_tail == nullptr) {
@@ -99,10 +98,10 @@ void SimpleLRU::_InsertNode(const std::string &key, const std::string &value) {
     }
     _free_size -= SumOfSize(key, value);
 
-    std::reference_wrapper<lru_node> ref_node(*buff);
-    std::reference_wrapper<const std::string> ref_key(key);
-    _lru_index.insert(std::pair<std::reference_wrapper<const std::string>,
-                      std::reference_wrapper<lru_node>>(ref_key, ref_node));
+    std::reference_wrapper<lru_node> ref_node(*_lru_tail);
+    std::reference_wrapper<const std::string> ref_key(_lru_tail->key);
+    _lru_index.insert(
+        std::pair<std::reference_wrapper<const std::string>, std::reference_wrapper<lru_node>>(ref_key, ref_node));
 }
 
 std::size_t SimpleLRU::SumOfSize(const std::string &key, const std::string &value) const {
