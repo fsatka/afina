@@ -1,18 +1,16 @@
 #ifndef AFINA_NETWORK_MT_BLOCKING_SERVER_H
 #define AFINA_NETWORK_MT_BLOCKING_SERVER_H
 
-
+#include <algorithm>
 #include <atomic>
 #include <thread>
-#include <algorithm>
 
 #include <afina/network/Server.h>
+#include <condition_variable>
+#include <mutex>
 #include <netdb.h>
 #include <queue>
-#include <mutex>
-#include <condition_variable>
-
-
+#include <vector>
 
 namespace spdlog {
 class logger;
@@ -40,6 +38,8 @@ public:
     // See Server.h
     void Join() override;
 
+    void _StartWorker(int client_socket, int index);
+
 protected:
     /**
      * Method is running in the connection acceptor thread
@@ -47,6 +47,8 @@ protected:
     void OnRun();
 
 private:
+    // Inner methods
+
     // Logger instance
     std::shared_ptr<spdlog::logger> _logger;
 
@@ -55,32 +57,19 @@ private:
     // bounds
     std::atomic<bool> running;
 
-    struct WaitingThread {
-        std::thread workerThread;
-        std::atomic_bool isFinished{ false };
+    std::vector<std::thread> _waiting_workers;
+    std::queue<int> _free_thread_index;
+    std::mutex _list_mutex;
+    uint32_t _count_of_workers = 0;
 
-        WaitingThread() = default;
-
-        bool joinable() const {
-            return workerThread.joinable();
-        }
-        
-        void join() {
-            workerThread.join();
-        }
-    };
-
-    std::vector<std::shared_ptr<WaitingThread>> _waiting_workers;
-    std::mutex _queue_mutex;
-    uint32_t _count_of_workers = 0; 
     // Server socket to accept connections on
     int _server_socket;
 
+    // cond variable for wake up on join
+    std::condition_variable _ready_join;
+
     // Thread to run network on
     std::thread _thread;
-
-    //Inner methods
-    void _start_worker(int client_socket, Afina::Storage* pStorage);
 };
 
 } // namespace MTblocking
