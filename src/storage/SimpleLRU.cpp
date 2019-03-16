@@ -17,7 +17,8 @@ bool SimpleLRU::Put(const std::string &key, const std::string &value) {
     auto it = _lru_index.find(key);
 
     if (it != _lru_index.end()) {
-        Delete(key);
+        it->second.get().key = value;
+        _MoveNode(&it->second.get());
     }
     SimpleLRU::_InsertNode(key, value);
     return true;
@@ -51,6 +52,7 @@ bool SimpleLRU::Delete(const std::string &key) {
     }
 
     lru_node *buff = &it->second.get();
+    _lru_index.erase(it);
     _free_size += SumOfSize(buff->key, buff->value);
     if (_lru_head.get() == _lru_tail) {
         _lru_tail = nullptr;
@@ -69,7 +71,6 @@ bool SimpleLRU::Delete(const std::string &key) {
         buff->next.reset();
     }
 
-    _lru_index.erase(it);
     return true;
 }
 
@@ -106,6 +107,28 @@ void SimpleLRU::_InsertNode(const std::string &key, const std::string &value) {
 
 std::size_t SimpleLRU::SumOfSize(const std::string &key, const std::string &value) const {
     return key.size() + value.size();
+}
+
+void SimpleLRU::_MoveNode(lru_node* curr_node)
+{
+    if(curr_node == _lru_tail) {
+        return;
+    }
+
+    if(curr_node == _lru_head.get()) {
+        curr_node->next->prev = nullptr;
+        curr_node->next.swap(_lru_head);
+        curr_node->next.swap(_lru_tail->next);
+        _lru_tail->next->prev = _lru_tail; //cur_node->prev = _lru_tail
+        _lru_tail = curr_node;
+        return;
+    }
+
+    curr_node->next->prev = curr_node->prev;
+    curr_node->next.swap(curr_node->prev->next);
+    _lru_tail->next.swap(curr_node->next);
+    curr_node->prev = _lru_tail;
+    _lru_tail = curr_node;
 }
 
 } // namespace Backend

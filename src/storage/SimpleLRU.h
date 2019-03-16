@@ -57,7 +57,7 @@ private:
     };
 
     void _InsertNode(const std::string &key, const std::string &value);
-
+    void _MoveNode(lru_node* curr_node);
     std::size_t SumOfSize(const std::string &key, const std::string &value) const;
 
     // Maximum number of bytes could be stored in this cache.
