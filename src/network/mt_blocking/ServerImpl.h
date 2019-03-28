@@ -57,14 +57,13 @@ private:
     // bounds
     std::atomic<bool> running;
 
-    std::vector<std::thread> _waiting_workers;
-    std::queue<int> _free_thread_index;
+    std::vector<int> _sockets;
+    std::queue<int> _free_sockets_index;
     std::mutex _list_mutex;
     uint32_t _count_of_workers = 0;
 
     // Server socket to accept connections on
     int _server_socket;
-
     // cond variable for wake up on join
     std::condition_variable _ready_join;
 

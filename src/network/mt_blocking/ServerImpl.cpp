@@ -98,7 +98,7 @@ void ServerImpl::_StartWorker(int client_socket, int index) {
 
                     std::string result;
                     command_to_execute->Execute(*pStorage, argument_for_command, result);
-                    
+
                     // Send response
                     if (send(client_socket, result.data(), result.size(), 0) <= 0) {
                         throw std::runtime_error("Failed to send response");
@@ -126,15 +126,17 @@ void ServerImpl::_StartWorker(int client_socket, int index) {
     command_to_execute.reset();
     argument_for_command.resize(0);
     parser.Reset();
-    //std::cout<<"Start"<<std::endl; //debug
+    // std::cout<<"Start"<<std::endl; //debug
     {
         std::lock_guard<std::mutex> lock(_list_mutex);
-        _free_thread_index.push(index);
-        if (_free_thread_index.size() == _count_of_workers && !running.load()) {
+        _sockets[index] = -1;
+        _free_sockets_index.push(index);
+        if (_free_sockets_index.size() == _count_of_workers && !running.load()) {
             _ready_join.notify_one();
         }
     }
-    //std::cout<<"End"<<std::endl;
+
+    // std::cout<<"End"<<std::endl;
 }
 // See Server.h
 void ServerImpl::Start(uint16_t port, uint32_t n_accept, uint32_t n_workers) {
@@ -177,10 +179,10 @@ void ServerImpl::Start(uint16_t port, uint32_t n_accept, uint32_t n_workers) {
 
     // initial pointers(memory) for workers
     _count_of_workers = n_workers;
-    _waiting_workers.reserve(n_workers);
+    _sockets.reserve(n_workers);
     for (std::size_t indx = 0; indx < n_workers; indx++) {
-        _free_thread_index.push(indx);
-        _waiting_workers.push_back(std::thread());
+        _free_sockets_index.push(indx);
+        _sockets[indx] = -1;
     }
 
     // runing thread on listen port
@@ -197,17 +199,21 @@ void ServerImpl::Stop() {
 // See Server.h
 void ServerImpl::Join() {
     running.store(false);
-
-    std::unique_lock<std::mutex> lock(_list_mutex);
-    while (_free_thread_index.size() != _count_of_workers) {
-        //std::cout<<"I'm here"<<std::endl; //debug
-        _ready_join.wait(lock);
-    }
-    for (std::thread &worker : _waiting_workers) {
-        if (worker.joinable()) {
-            worker.join();
+    {
+        std::unique_lock<std::mutex> lock(_list_mutex);
+        for (std::size_t i = 0; i < _count_of_workers; i++) {
+            if (_sockets[i] != -1) {
+                shutdown(_sockets[i], SHUT_RD);
+                close(_sockets[i]);
+            }
         }
     }
+    std::unique_lock<std::mutex> lock(_list_mutex);
+    while (_free_sockets_index.size() != _count_of_workers) {
+        // std::cout<<"I'm here"<<std::endl; //debug
+        _ready_join.wait(lock);
+    }
+
     assert(_thread.joinable());
     _thread.join();
     close(_server_socket);
@@ -251,14 +257,11 @@ void ServerImpl::OnRun() {
         // TODO: Start new thread and process data from/to connection
         {
             std::lock_guard<std::mutex> lock(_list_mutex);
-            if (_free_thread_index.size() > 0 && running) {
-                int index = _free_thread_index.front();
-                _free_thread_index.pop();
-                if (_waiting_workers[index].joinable()) {
-                    _waiting_workers[index].join();
-                }
-                //std::cout<<index<<" "<<_waiting_workers[index].joinable()<<std::endl;
-                _waiting_workers[index] = std::move(std::thread(&ServerImpl::_StartWorker, this, client_socket, index));
+            if (_free_sockets_index.size() > 0 && running) {
+                int index = _free_sockets_index.front();
+                _sockets[index] = client_socket;
+                _free_sockets_index.pop();
+                std::thread(&ServerImpl::_StartWorker, this, client_socket, index).detach();
             } else {
                 close(client_socket);
             }
